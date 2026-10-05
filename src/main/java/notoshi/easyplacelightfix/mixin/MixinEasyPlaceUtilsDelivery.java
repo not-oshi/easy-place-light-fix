@@ -18,9 +18,8 @@ import notoshi.easyplacelightfix.PrinterDelivery;
  *
  * <p>This class lives in the {@code required: true} mixin config on purpose: these hooks <em>are</em>
  * the mod's behaviour, so if Litematica moves them the game fails loudly instead of silently
- * degrading back to "light blocks do not place". Diagnostics, which are not behaviour, live in the
- * optional config. The Printer-style rotation is sent from vanilla instead — see
- * {@link MixinMultiPlayerGameModeDelivery}.</p>
+ * degrading back to "light blocks do not place". The Printer-style rotation is sent from vanilla
+ * instead — see {@link MixinMultiPlayerGameModeDelivery}.</p>
  *
  * <p>{@code EasyPlaceUtils} is a static utility class, so every handler must be {@code static}:
  * Mixin rejects a non-static callback on a static target with
@@ -125,6 +124,10 @@ public class MixinEasyPlaceUtilsDelivery
      * {@code handleEasyPlace} straight into {@code Minecraft#tick} and the client dies. The
      * {@code try/catch} below is belt to that suspenders, since the same unwinding path would carry
      * any other mistake identically.</p>
+     *
+     * <p>The ordinal-3 site is the only one of the four that is ours: offsets 23, 142 and 161 are
+     * the null-player guard, the Carpet placement-position handler and the normal schematic hit
+     * respectively.</p>
      */
     @Inject(method = GET_TARGET, at = @At(value = "RETURN", ordinal = 3), cancellable = true)
     private static void notoshi$rescueLightTarget(CallbackInfoReturnable<BlockHitResult> cir)
@@ -141,17 +144,13 @@ public class MixinEasyPlaceUtilsDelivery
             if (rescued != null)
             {
                 cir.setReturnValue(rescued);
-
-                // Without this the snapshot would report the target lookup as never reached: the
-                // debug hook that normally records getTargetPosition' answer is at ordinals 0, 1
-                // and 2 only, because ordinal 3 is this instruction and cancelling here skips
-                // every injection placed after ours at the same offset.
-                notoshi.easyplacelightfix.Diagnostics.onTargetPosition(rescued);
             }
         }
         catch (Throwable t)
         {
-            PrinterDelivery.onHookFailed("rescueLightTarget", t);
+            // Same reasoning as in notoshi$directLightClick: this runs inside Litematica's click
+            // handling with no exception barrier, so anything thrown would unwind into
+            // Minecraft#tick. Litematica's own answer is the fallback.
         }
     }
 
@@ -227,7 +226,9 @@ public class MixinEasyPlaceUtilsDelivery
         }
         catch (Throwable t)
         {
-            PrinterDelivery.onHookFailed("directLightClick", t);
+            // This hook runs inside Litematica's click handling, on the render thread, with no
+            // exception barrier between it and Minecraft#tick. Anything thrown propagates straight
+            // out and kills the client, so swallow it and fall back to Litematica's own click.
         }
     }
 }

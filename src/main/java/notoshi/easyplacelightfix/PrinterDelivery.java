@@ -7,7 +7,6 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
-import net.minecraft.world.InteractionResult;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
@@ -78,8 +77,7 @@ import net.minecraft.world.phys.Vec3;
  * <p>A light block in mid-air has six neighbours of air, so the loop finds no support, returns
  * {@code null}, and {@code handleEasyPlace} bails with {@code FAIL} at its
  * {@code clickPos == null || hand == null} check — with a valid target, a valid item and a valid
- * hand. That is the exact state the diagnostics report as {@code click position: <null>} with
- * {@code canPlaceBlock: true}.</p>
+ * hand.</p>
  *
  * <p>{@link #directLightClick(BlockPos)} replaces the answer for light targets with a click on the
  * target cell itself. {@code BlockItem} places into whatever
@@ -130,7 +128,7 @@ public final class PrinterDelivery
      * Deduplication state for the rotation, so one click produces exactly one
      * {@link ServerboundMovePlayerPacket.Rot}.
      *
-     * <p>Needed because the rotation is now sent from the head of
+     * <p>Needed because the rotation is sent from the head of
      * {@link net.minecraft.client.multiplayer.MultiPlayerGameMode#useItemOn}, and for a light block
      * that method is genuinely entered <b>twice</b>: once by vanilla for the player's own
      * right-click, and once more from inside Litematica's Easy Place, which is triggered by that same
@@ -147,8 +145,6 @@ public final class PrinterDelivery
     private static long lastRotatedTick = Long.MIN_VALUE;
 
     private PrinterDelivery() {}
-
-    // --- hook plumbing ---------------------------------------------------------------------------
 
     /**
      * Sends the Printer-style rotation for a light block click, once.
@@ -205,98 +201,10 @@ public final class PrinterDelivery
         }
         catch (Throwable t)
         {
-            Diagnostics.onHookFailed("onUseItemOn", t);
+            // The hook already runs inside Litematica's click handling with no exception barrier, so
+            // anything thrown here would unwind into Minecraft#tick and kill the client. Swallow it
+            // and let the click go out with the camera's real rotation, which is stock behaviour.
         }
-    }
-
-    /**
-     * Records what {@code MultiPlayerGameMode#useItemOn} actually answered.
-     *
-     * <p>Needed because nothing downstream of it can be trusted to say. Litematica's rewritten path
-     * inspects the answer only against {@link InteractionResult#PASS} and reports the opposite of
-     * what it means — {@code handleEasyPlace} returns {@code PASS} when the block is down and
-     * {@code SUCCESS} when nothing happened (see {@code MixinMultiPlayerGameModeDelivery} for the
-     * bytecode). The legacy path compares against {@code SUCCESS} plus a swing source. Neither is a
-     * verdict a human can read off a counter.</p>
-     *
-     * <p>Overwritten rather than accumulated, on purpose: for a light block {@code useItemOn} is
-     * entered twice per click, and only the <b>last</b> return before Litematica returns is the one
-     * that describes the Easy Place placement. The earlier one belongs to the player's own
-     * right-click that triggered it.</p>
-     *
-     * <p>{@code null} is reported as such rather than coerced. {@code useItemOn} reads the result out
-     * of a {@code MutableObject} that the predicted action writes, so a null is a real possibility
-     * if the prediction never ran — and it means something entirely different from {@code FAIL}.</p>
-     *
-     * @param returnOrdinal which of {@code useItemOn}'s two {@code areturn} sites this was:
-     *                      0 = the world-border bail-out, 1 = the prediction result
-     */
-    public static void onUseItemOnResult(LocalPlayer player,
-                                         BlockHitResult hitResult,
-                                         InteractionResult result,
-                                         int returnOrdinal)
-    {
-        try
-        {
-            if (!ModConfig.get().debug)
-            {
-                return;
-            }
-
-            String verdict;
-
-            if (result == null)
-            {
-                verdict = "null - the predicted action never wrote a result, so the click was sent"
-                        + " but nothing ran client-side";
-            }
-            else if (returnOrdinal == 0)
-            {
-                verdict = "FAIL - the click is outside the world border (useItemOn offset 27,"
-                        + " returned before the prediction started)";
-            }
-            else if (result == InteractionResult.SUCCESS)
-            {
-                verdict = "SUCCESS - the block was placed";
-            }
-            else if (result == InteractionResult.CONSUME)
-            {
-                verdict = "CONSUME - consumed without swinging (this is what spectator mode returns)";
-            }
-            else if (result == InteractionResult.PASS)
-            {
-                verdict = "PASS - the item did nothing at this position";
-            }
-            else if (result == InteractionResult.FAIL)
-            {
-                verdict = "FAIL - vanilla refused the placement (BlockItem#place returns FAIL when"
-                        + " the cell is not replaceable, the block cannot survive, or setBlock"
-                        + " refused)";
-            }
-            else
-            {
-                verdict = String.valueOf(result);
-            }
-
-            Diagnostics.onUseItemOnResult(verdict, result == InteractionResult.SUCCESS);
-        }
-        catch (Throwable t)
-        {
-            Diagnostics.onHookFailed("onUseItemOnResult", t);
-        }
-    }
-
-    /**
-     * Reports that one of the delivery hooks threw.
-     *
-     * <p>The hooks already caught the throwable, so the click continues with stock Litematica
-     * behaviour. What is left to do is tell the user <i>why</i> the mod quietly did nothing, since a
-     * silent patch mod is indistinguishable from a broken one. Throttled, because a hook that throws
-     * would otherwise throw on every tick.</p>
-     */
-    public static void onHookFailed(String hook, Throwable t)
-    {
-        Diagnostics.onHookFailed(hook, t);
     }
 
     // --- target rescue ---------------------------------------------------------------------------
@@ -353,8 +261,6 @@ public final class PrinterDelivery
         {
             return null;
         }
-
-        Diagnostics.onTargetRescued(hit);
 
         return hit;
     }
@@ -439,14 +345,6 @@ public final class PrinterDelivery
                 face.getStepX() * 0.5D, face.getStepY() * 0.5D, face.getStepZ() * 0.5D);
 
         BlockHitResult hit = new BlockHitResult(location, face, targetPos, false);
-
-        Diagnostics.onDirectLightClick(hit);
-
-        // The debug hook that observes getClickPosition' own return sits in the optional mixin
-        // config, and it is at the very instruction this injection cancels at - so it would never
-        // run for a click this method produced. Recorded here instead, which is the honest value
-        // anyway: this is the click Litematica is about to use.
-        Diagnostics.onClickPosition(hit);
 
         return hit;
     }
@@ -538,7 +436,5 @@ public final class PrinterDelivery
 
         player.connection.send(new ServerboundMovePlayerPacket.Rot(
                 yaw, pitch, player.onGround(), player.horizontalCollision));
-
-        Diagnostics.onFakeRotation(face, yaw, pitch);
     }
 }

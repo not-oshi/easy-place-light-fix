@@ -11,8 +11,6 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
 
-import notoshi.easyplacelightfix.Diagnostics;
-
 /**
  * Makes {@code minecraft:light} placeable through Litematica's Easy Place.
  *
@@ -120,11 +118,6 @@ public class MixinRayTraceUtils
     {
         if (blockState.is(Blocks.LIGHT))
         {
-            VoxelShape vanillaShape = blockState.getShape(world, pos, context);
-
-            // Diagnostics: proves the redirect fired, and shows what the shape would have been.
-            Diagnostics.onLightBlockShapeQuery(pos, blockState, vanillaShape);
-
             // Shapes.block() is the full 0..1 cube on all three axes (called Shapes.fullCube()
             // before 26.x). This is precisely the shape LightBlock reports while a light block is
             // held, i.e. we reproduce vanilla's "a light block is in hand" behaviour.

@@ -7,8 +7,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 
 /**
- * Reflective access to Litematica's schematic world, shared by the delivery logic and the
- * diagnostics.
+ * Reflective access to Litematica's schematic world.
  *
  * <p>The mod deliberately has no compile-time dependency on Litematica: the mixins target it by name
  * via {@code @Mixin(targets = ...)}, which works against any build of it. Anything that needs to
@@ -67,12 +66,6 @@ public final class SchematicAccess
         }
 
         return null;
-    }
-
-    /** Whether a schematic is loaded at all — used to tell "no schematic" apart from "no access". */
-    public static boolean isAvailable()
-    {
-        return resolve() != null;
     }
 
     private static Method resolve()
