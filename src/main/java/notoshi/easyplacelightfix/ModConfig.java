@@ -78,39 +78,17 @@ public final class ModConfig
      * because vanilla cannot click air. A light block in mid-air has no solid neighbour, the search
      * returns nothing, and Easy Place reports {@code FAIL} with a valid target and a valid item.</p>
      *
-     * <p><b>Independent of {@code easyPlaceClickAdjacent} since 1.3.0.</b> The hook is on
+     * <p><b>Independent of {@code easyPlaceClickAdjacent}.</b> The hook is on
      * {@code getClickPosition}, the single point both of Litematica's branches pass through, so the
-     * mod behaves identically with that option on or off. 1.0–1.2 hooked
-     * {@code getAdjacentClickPosition}, which is only called on the {@code on} branch, which made the
-     * whole mod a silent no-op with the option off.</p>
+     * mod behaves identically with that option on or off. Hooking
+     * {@code getAdjacentClickPosition} instead would be a silent no-op with the option off, since that
+     * method only runs on the {@code on} branch.</p>
      *
      * <p>Only ever applied when the target is a {@code minecraft:light} in the loaded schematic
      * <b>and</b> the cell is still empty in the client world. Every other block, and every light
      * cell that is actually occupied, keeps Litematica's stock behaviour.</p>
      */
     public boolean directClickForLightBlocks = true; // always on - needed for light blocks in air
-
-    /**
-     * Mode of {@code directClickForLightBlocks} behaviour.
-     *
-     * <p>Controls how the click-position substitution interacts with both Easy Place paths
-     * ({@code easyPlacePostRewrite = ON} and {@code = OFF}).</p>
-     *
-     * <p>Default {@code 1} balances both paths. Set to {@code 0} for light-block-only substitution
-     * (original 1.3.1/1.3.2 behaviour), or {@code 2} for vanilla-style substitution for all blocks.</p>
-     */
-    public int directClickForLightBlocksMode = 2; // always on - light blocks need click substitution in air
-
-    /**
-     * Minimum milliseconds between two pickBlock attempts for the same block type.
-     * <p>Litematica's internal rate limiter blocks attempts faster than this interval.
-     * Increasing this value makes placement more likely when holding the button (e.g. set to
-     * 500 for 500ms between attempts, or 0 to disable the limiter entirely).</p>
-     *
-     * <p>Default {@code 100} matches Litematica 0.28.8's vanilla behaviour. Set to {@code 0}
-     * to disable the limiter (not recommended on servers with anti-cheat).</p>
-     */
-    public long easyPlaceSwapIntervalMs = 100L; // hardcoded default: 100ms (original Litematica behavior)
 
     private static ModConfig instance;
 
@@ -148,8 +126,6 @@ public final class ModConfig
                 this.rotateForLightBlocks = bool(props, "rotateForLightBlocks", this.rotateForLightBlocks);
                 this.rescueLightTarget = bool(props, "rescueLightTarget", this.rescueLightTarget);
                 this.directClickForLightBlocks = bool(props, "directClickForLightBlocks", this.directClickForLightBlocks);
-                this.directClickForLightBlocksMode = (int) num(props, "directClickForLightBlocksMode", this.directClickForLightBlocksMode);
-                this.easyPlaceSwapIntervalMs = num(props, "easyPlaceSwapIntervalMs", this.easyPlaceSwapIntervalMs);
             }
             catch (IOException | IllegalArgumentException e)
             {
@@ -234,9 +210,7 @@ public final class ModConfig
                 + "unthrottledSnapshots=" + this.unthrottledSnapshots + "\n"
                 + "rotateForLightBlocks=" + this.rotateForLightBlocks + "\n"
                 + "rescueLightTarget=" + this.rescueLightTarget + "\n"
-                + "easyPlaceSwapIntervalMs=" + this.easyPlaceSwapIntervalMs + "\n"
-                + "directClickForLightBlocks=" + this.directClickForLightBlocks + "\n"
-                + "directClickForLightBlocksMode=" + this.directClickForLightBlocksMode + "\n";
+                + "directClickForLightBlocks=" + this.directClickForLightBlocks + "\n";
 
         try
         {

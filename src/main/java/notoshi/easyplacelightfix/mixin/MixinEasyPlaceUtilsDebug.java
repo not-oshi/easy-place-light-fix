@@ -30,54 +30,29 @@ import notoshi.easyplacelightfix.Diagnostics;
  * {@code [BLOCKED]} explains the verdict rather than just repeating it.
  *
  * <h3>Every {@code @At} in this class states its ordinal</h3>
- * There is no bare {@code @At("RETURN")} anywhere in this class, and that is a rule, not a
- * coincidence — three separate bugs in 1.0–1.2 all came from leaning on the default:
+ * A bare {@code @At("RETURN")} is not allowed in this mod. A default ordinal silently resolves to
+ * whichever return the injector reaches first, so a hook meant for one branch can report another
+ * branch's verdict, duplicate another hook's instruction, or oscillate between a real value and a
+ * sentinel on the same click. Every injection point below therefore names an explicit ordinal.
  *
- * <ul>
- *   <li>1.2.0's result hook fired at the same instruction as {@link #notoshi$branch0}, so it
- *       reported {@code FAIL} with no branch attributed ({@code return site: <none recorded>}) and
- *       then printed a banner blaming another mod for a method that was never touched;</li>
- *   <li>{@code notoshi$debugTarget} observed one of {@code getTargetPosition}'s four returns, so
- *       the snapshot alternated between a real position and
- *       {@code <target lookup not reached>} on clicks where the lookup demonstrably had run
- *       ({@code [RESCUED]} was printed at the very same timestamp);</li>
- *   <li>{@code notoshi$debugRestriction} and {@code notoshi$debugCanPlace} observed one of seven
- *       and one of three returns respectively, which is why {@code restrictionTrue} read 7 against
- *       {@code blocked = 41}.</li>
- * </ul>
+ * <h3>Static targets get {@code @Inject}, never {@code @Redirect}</h3>
+ * Mixin builds a {@code @Redirect} handler's signature from the target's parameters and its
+ * <b>return type</b>, and does not pass the original return value in as a parameter. A handler for a
+ * {@code static} target that takes a boolean parameter is therefore rejected outright, and calling
+ * the target from inside the handler re-enters the redirect rather than returning the original
+ * value. There is no signature that both observes the verdict and preserves the original behaviour,
+ * so {@code placementRestrictionInEffect()} and {@code canPlaceBlock()} are observed the direct way:
+ * one pinned {@code @Inject} per return site.
  *
- * <h3>There is no {@code @Redirect} in this class, and that is not a style choice</h3>
- * 1.3.0 tried to observe {@code placementRestrictionInEffect()} and {@code canPlaceBlock()} by
- * redirecting their <i>call sites</i> instead of pinning seven and three returns each, on the
- * reasoning that a redirect sees every verdict by construction. Both are {@code static} methods, and
- * a {@code static} target is the one case where that reasoning fails: Mixin builds a redirect
- * handler's signature from the target's parameters and its <b>return type</b>, and does <b>not</b>
- * pass the return value in as a parameter. So there is no way to both observe the verdict and keep
- * the original behaviour — calling the method from inside the handler re-enters the redirect.
- *
- * <p>Two live errors from the 1.3.0 tester log, verbatim, because both signatures look reasonable:
- * </p>
- *
- * <pre>
- *     notoshi$debugRestrictionFirst(Z)Z
- *       Found 1 unexpected additional method arguments: (boolean)
- *     notoshi$legacyResult(Minecraft, InteractionResult)
- *       Found unexpected argument type net.minecraft.world.InteractionResult at index 1,
- *       expected net.minecraft.client.Minecraft
- *       Expected signature: (Lnet/minecraft/client/Minecraft;
- *                              Lnet/minecraft/client/Minecraft;)Lnet/minecraft/world/InteractionResult;
- * </pre>
- *
- * <p>A rejected handler descriptor aborts the whole mixin class, so all three cost this mod every
- * diagnostic in this file, not just the three handlers — and because this config is
- * {@code required: false} the only symptom was one {@code WARN} line. The value of a helper is
- * therefore observed the boring way: one pinned {@code @Inject} per return site.</p>
+ * <p>A rejected handler descriptor aborts the whole mixin class, so a single bad signature disables
+ * every hook in this file, not just its own. Because the config is {@code required: false}, the only
+ * symptom is one {@code WARN} line, which is why handler signatures here are kept plain.</p>
  *
  * <p>Where a helper's verdict is not needed it is simply not observed. {@code placementRestrictionInEffect()}
- * has three call sites — {@code handleEasyPlace} offsets 70 and 108, which are immediately followed
- * by the {@code FAIL} returns already pinned as ordinals 0 and 1, and {@code handlePlacementRestriction},
- * which is pinned here once. A {@code true} verdict therefore cannot hide anywhere, so there is no
- * counter for it.</p>
+ * has three call sites — {@code handleEasyPlace} offsets 70 and 108, each immediately followed by
+ * the {@code FAIL} returns already pinned as ordinals 0 and 1, and
+ * {@code handlePlacementRestriction}, pinned once — so a {@code true} verdict cannot hide anywhere
+ * and needs no counter.</p>
  *
  * <h3>Two sites deliberately belong to the behaviour mixin</h3>
  * {@code getTargetPosition} ordinal 3 and {@code getClickPosition} ordinal 1 are the two
@@ -107,10 +82,10 @@ public class MixinEasyPlaceUtilsDebug
      *
      * <p>The callback parameter is mandatory even at {@code HEAD}, and because
      * {@code handleEasyPlace} returns {@link InteractionResult} it must be a
-     * {@link CallbackInfoReturnable}, not a plain {@code CallbackInfo}. Leaving it out failed with
-     * {@code Expected (L...CallbackInfoReturnable;)V but found ()V} and, because a bad descriptor
-     * aborts the whole mixin class, took all diagnostics below down with it — the failure looked
-     * like "the mod is quiet", not like an error.</p>
+     * {@link CallbackInfoReturnable}, not a plain {@code CallbackInfo}: the expected descriptor is
+     * {@code (L...CallbackInfoReturnable;)V}, and an omitted parameter does not match. A bad
+     * descriptor aborts the whole mixin class, so the cost of getting it wrong is every diagnostic
+     * in this file going silent rather than one visible error.</p>
      */
     @Inject(method = HANDLE, at = @At("HEAD"))
     private static void notoshi$attemptStart(CallbackInfoReturnable<InteractionResult> cir)
@@ -134,8 +109,8 @@ public class MixinEasyPlaceUtilsDebug
      * {@code areturn} ordinal 7 — the {@code SUCCESS} return, taken when {@code useItemOn} itself
      * answered {@code PASS}.
      *
-     * <p><b>This is the trap that made 1.0–1.2 print {@code placed=0} forever.</b> The bytecode
-     * immediately upstream of it reads:</p>
+     * <p><b>The two ordinals below are inverted relative to their constant names, so read the
+     * bytecode, not the constant.</b> The instructions immediately upstream read:</p>
      *
      * <pre>
      *     754: invokevirtual MultiPlayerGameMode.useItemOn:(...)Lnet/minecraft/world/InteractionResult;
@@ -150,13 +125,12 @@ public class MixinEasyPlaceUtilsDebug
      *     959: areturn                  // ordinal 8
      * </pre>
      *
-     * <p>and {@code BlockItem#place} on success returns {@code InteractionResult.SUCCESS}
-     * (bytecode offset 268 of that method) and on every failure path returns {@code FAIL} — it never
-     * returns {@code PASS}. So ordinal 7 means <b>useItemOn did nothing</b>, and ordinal 8 means
-     * <b>the block is down</b>. 1.0–1.3.0 counted {@code placed++} on ordinal 7, i.e. exactly in the
-     * one case that places nothing, which is why a session with 19 successful placements reported
-     * {@code placed=0 blocked=180 passed=47}. The counter is fixed in 1.3.1; see
-     * {@link Diagnostics#onUseItemOnResult} for how the real verdict is obtained rather than inferred.
+     * <p>{@code BlockItem#place} on success returns {@code InteractionResult.SUCCESS} (bytecode
+     * offset 268 of that method) and on every failure path returns {@code FAIL} — it never returns
+     * {@code PASS}. So ordinal 7 means <b>nothing was placed</b>, and ordinal 8 means <b>the click
+     * went out</b>; counting a placement from ordinal 7 would count exactly the case that places
+     * nothing. See {@link Diagnostics#onUseItemOnResult} for how the real verdict is obtained
+     * rather than inferred.
      */
     @Inject(method = HANDLE, at = @At(value = "RETURN", ordinal = 7))
     private static void notoshi$resultNothingPlaced(CallbackInfoReturnable<InteractionResult> cir)
@@ -194,16 +168,15 @@ public class MixinEasyPlaceUtilsDebug
     // cannot and route through onEasyPlaceResult(), which is why blocked is counted in branch() and
     // not from the return value of the method.
     //
-    // Ordinals 7 and 8 are the pair 1.0-1.3.0 read backwards; notoshi$resultNothingPlaced and
-    // notoshi$resultClickIssued say so at the hook, because "ordinal 7 = success" is the most
-    // natural wrong reading of that bytecode there is.
+    // Ordinals 7 and 8 read backwards from their constant names: "ordinal 7 = success" is the
+    // natural wrong reading of that bytecode, so notoshi$resultNothingPlaced and
+    // notoshi$resultClickIssued say so at the hook.
     //
     // The number passed to branch() is the areturn ordinal verbatim, so it indexes
     // Diagnostics.RETURN_SITES directly and the two cannot drift apart.
     //
-    // Note ordinal 5, not 6: the earlier labelling called this "6/6 the placement protocol vetoed
-    // this block", which sent the diagnosis in exactly the wrong direction - the placement protocol
-    // never even runs for a light block.
+    // Note ordinal 5, not 6: the placement protocol never runs for a light block, so ordinal 6 is
+    // not the light-block veto someone may expect it to be.
 
     @Inject(method = HANDLE, at = @At(value = "RETURN", ordinal = 0))
     private static void notoshi$branch0(CallbackInfoReturnable<InteractionResult> cir)
@@ -297,18 +270,17 @@ public class MixinEasyPlaceUtilsDebug
      * {@code litematica.message.placement_restriction_fail}.
      *
      * <p>The no-argument {@code placementRestrictionInEffect()} itself is deliberately <b>not</b>
-     * observed per return site. It has seven {@code ireturn} sites (offsets 30, 57, 132, 153, 185,
-     * 235, 237) and three call sites — {@code handleEasyPlace} offsets 70 and 108, and this method —
-     * and 1.3.0's attempt to watch those call sites instead is what took this entire mixin class
-     * down (see the class comment). The two {@code handleEasyPlace} call sites are each followed
-     * immediately by a {@code FAIL} that is already pinned as {@link #notoshi$branch0} and
-     * {@link #notoshi$branch1}, so a {@code true} verdict cannot go unnoticed there. That leaves only
-     * this call site, which has exactly one {@code ireturn} (offset 69).</p>
+     * observed per return site: it is a static target, so a call-site {@code @Redirect} cannot
+     * report its verdict (see the class comment), and its seven {@code ireturn} sites (offsets 30,
+     * 57, 132, 153, 185, 235, 237) serve only three call sites. The two {@code handleEasyPlace} call
+     * sites, offsets 70 and 108, are each followed immediately by a {@code FAIL} already pinned as
+     * {@link #notoshi$branch0} and {@link #notoshi$branch1}, so a {@code true} verdict cannot go
+     * unnoticed there. That leaves only this call site, which has exactly one {@code ireturn}
+     * (offset 69).</p>
      *
-     * <p>So the counter {@code restrictionTrue}, which read 0 for an entire tester session because
-     * this class never applied, is gone rather than reintroduced: {@code blocked} plus
-     * {@code lastReturnSite} already distinguish "vetoed by the restriction" from every other veto.
-     * This hook adds the one thing those two cannot show — whether the on-screen warning is armed.</p>
+     * <p>No per-return-site counter is therefore needed: {@code blocked} plus {@code lastReturnSite}
+     * already distinguish "vetoed by the restriction" from every other veto. This hook adds the one
+     * thing those two cannot show — whether the on-screen warning is armed.</p>
      */
     @Inject(method = "handlePlacementRestriction()Z", at = @At(value = "RETURN", ordinal = 0))
     private static void notoshi$debugRestrictionWarningArmed(CallbackInfoReturnable<Boolean> cir)
@@ -324,10 +296,6 @@ public class MixinEasyPlaceUtilsDebug
      * of {@code handleEasyPlace}, so all three are pinned. They agree on the verdict — the method
      * checks one thing — and are kept separate only so a future Litematica release that adds an early
      * bail-out shows up in the log instead of silently changing the answer.</p>
-     *
-     * <p>1.3.0 redirected the single call site instead and the handler was rejected
-     * ({@code Found 1 unexpected additional method arguments: (boolean)}), which aborted this whole
-     * class. See the class comment for why a redirect cannot work here.</p>
      */
     @Inject(
             method = "canPlaceBlock(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/Level;"
@@ -389,7 +357,7 @@ public class MixinEasyPlaceUtilsDebug
      *
      * <p>Three {@code ireturn} sites in 0.28.8 (offsets 7, 86, 103), all three pinned: they mean
      * "click consumed and the fail message is being printed", "click consumed, no message",
-     * "not handled at all". 1.0–1.2 only ever saw one of them.</p>
+     * "not handled at all".</p>
      */
     @Inject(method = "handleEasyPlaceWithMessage()Z", at = @At(value = "RETURN", ordinal = 0))
     private static void notoshi$debugMessageShown(CallbackInfoReturnable<Boolean> cir)

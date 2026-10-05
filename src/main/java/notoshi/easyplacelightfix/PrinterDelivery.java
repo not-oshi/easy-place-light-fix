@@ -58,8 +58,8 @@ import net.minecraft.world.phys.Vec3;
  *
  * <pre>
  *     if (EASY_PLACE_CLICK_ADJACENT.getBooleanValue())
- *         return getAdjacentClickPosition(targetPos);   // &lt;- 1.0-1.2 hooked here
- *     return hitResult;                                 // &lt;- 1.3 hooks here
+ *         return getAdjacentClickPosition(targetPos);   // neighbour search
+ *     return hitResult;                                 // &lt;- this mod hooks here
  * </pre>
  *
  * <p>On the {@code true} branch {@code getAdjacentClickPosition} has to find <em>some block to
@@ -88,15 +88,13 @@ import net.minecraft.world.phys.Vec3;
  * fills it. That is the same trick Litematica Printer's "replaceable" mode relies on.</p>
  *
  * <p><b>Why the hook sits on {@code getClickPosition} and not on
- * {@code getAdjacentClickPosition}.</b> 1.0–1.2 hooked {@code getAdjacentClickPosition} at its head,
- * which is only ever called on the {@code true} branch — so the mod silently did nothing whenever
- * {@code easyPlaceClickAdjacent} was off, even though the diagnosis it printed ("check
- * directClickForLightBlocks") was about something else entirely. {@code getClickPosition} is the
- * single point both branches pass through, so one hook now covers the option being on or off. The
- * price is that Litematica's pointless neighbour search still runs before the result is replaced;
- * it costs one ray trace per light block click.</p>
+ * {@code getAdjacentClickPosition}.</b> The latter is only ever called on the {@code true} branch, so
+ * hooking it there would make the mod a silent no-op whenever {@code easyPlaceClickAdjacent} is off.
+ * {@code getClickPosition} is the single point both branches pass through, so one hook covers the
+ * option being on or off. The price is that Litematica's neighbour search still runs before the result
+ * is replaced; it costs one ray trace per light block click.</p>
  *
- * <h2>Why the rotation moved out of {@code handleEasyPlace}</h2>
+ * <h2>Why the rotation sits in {@code useItemOn}</h2>
  * Litematica has two completely separate Easy Place implementations and a config option picks
  * between them:
  *
@@ -108,7 +106,7 @@ import net.minecraft.world.phys.Vec3;
  *
  * <p>EasyPlaceFix replaces {@code WorldUtils#doEasyPlaceAction} and its own tick queue calls
  * {@code MultiPlayerGameMode#useItemOn} directly, so while that mod is in charge
- * {@code EasyPlaceUtils#handleEasyPlace} is never reached. A redirect on the {@code useItemOn} call
+ * {@code EasyPlaceUtils#handleEasyPlace} is never reached. A hook on the {@code useItemOn} call
  * <i>inside</i> {@code handleEasyPlace} therefore cannot fire in that configuration at all. Injecting
  * at the head of {@code useItemOn} itself — a vanilla method every path funnels through — makes the
  * mod compose with EasyPlaceFix instead of being mutually exclusive with it.</p>
@@ -158,11 +156,11 @@ public final class PrinterDelivery
      * <p>Called from the head of {@code MultiPlayerGameMode#useItemOn}, so it is
      * <b>path-agnostic</b>: it fires for Litematica's rewritten path
      * ({@code easyPlacePostRewrite = true}), for Litematica's legacy path, and for a click made by
-     * EasyPlaceFix's own tick queue, because all three end up calling that one vanilla method. Before
-     * 1.3.0 the rotation was a redirect on the {@code useItemOn} <i>call site inside</i>
-     * {@code EasyPlaceUtils#handleEasyPlace}, which meant it could only ever fire on the rewritten
-     * path — and therefore never at all while EasyPlaceFix was in charge, since EasyPlaceFix replaces
-     * {@code WorldUtils#doEasyPlaceAction} and never reaches the rewritten method.</p>
+     * EasyPlaceFix's own tick queue, because all three end up calling that one vanilla method. A hook
+     * on the {@code useItemOn} call <i>inside</i> {@code EasyPlaceUtils#handleEasyPlace} would fire
+     * on the rewritten path only, and therefore never at all while EasyPlaceFix is in charge, since
+     * EasyPlaceFix replaces {@code WorldUtils#doEasyPlaceAction} and never reaches the rewritten
+     * method.</p>
      *
      * <p>Deliberately sends the rotation and nothing else: the click itself is not modified here, so
      * every other block — and every light cell that is already occupied — is untouched.</p>
@@ -292,9 +290,9 @@ public final class PrinterDelivery
      * Reports that one of the delivery hooks threw.
      *
      * <p>The hooks already caught the throwable, so the click continues with stock Litematica
-     * behaviour. What is left to do is tell the user <i>why</i> the mod quietly did nothing — a silent
-     * mod is indistinguishable from a broken one, which is the single worst failure mode a patch mod
-     * has. Throttled, because a hook that throws would otherwise throw on every tick.</p>
+     * behaviour. What is left to do is tell the user <i>why</i> the mod quietly did nothing, since a
+     * silent patch mod is indistinguishable from a broken one. Throttled, because a hook that throws
+     * would otherwise throw on every tick.</p>
      */
     public static void onHookFailed(String hook, Throwable t)
     {
@@ -392,8 +390,8 @@ public final class PrinterDelivery
      * Builds a click on the target cell itself, replacing Litematica's "find a solid block to click"
      * search for light blocks.
      *
-     * <p>Guarded as narrowly as possible, because every condition here is one that could turn a
-     * working placement into a broken one:</p>
+     * <p>Guarded as narrowly as possible, so that stock placement behaviour is preserved wherever
+     * this mod has no reason to intervene:</p>
      * <ul>
      *   <li>{@code directClickForLightBlocks} off — the user asked for stock behaviour;</li>
      *   <li>the target is a {@code minecraft:light} <b>in the schematic</b>, so nothing else is

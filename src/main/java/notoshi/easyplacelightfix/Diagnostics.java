@@ -50,22 +50,18 @@ public final class Diagnostics
     public static int postRewriteCalls;
 
     /**
-     * Clicks that really went out and put a block down — i.e. Easy Place left through {@code
-     * handleEasyPlace} areturn ordinal 8 <b>and</b> the last {@code useItemOn} answered
-     * {@link InteractionResult#SUCCESS}.
+     * Clicks that really put a block down: Easy Place left through a return site that means "the click
+     * went out" <b>and</b> the last {@code useItemOn} answered {@link InteractionResult#SUCCESS}.
      *
-     * <p>1.0–1.3.0 counted this on areturn ordinal 7, which is the one return that means the click
-     * did <i>nothing</i>. The counter was therefore structurally incapable of ever being non-zero,
-     * and a session that placed 19 light blocks reported {@code placed=0 blocked=180 passed=47} —
-     * which reads as a total failure. Fixed in 1.3.1; the two conditions are now both real
-     * observations.</p>
+     * <p>Both conditions are real observations. Note that the areturn ordinal alone is not enough —
+     * see {@link #RETURN_SITES} on why ordinals 7 and 8 read the opposite of what their names
+     * suggest.</p>
      */
     public static int placed;
 
     /**
-     * Clicks that went out and vanilla refused: areturn ordinal 8 with the last {@code useItemOn}
-     * answering {@code FAIL}, {@code CONSUME} or {@code null}. This is the number that would have
-     * caught the inverted counter being noticed in the first place.
+     * Clicks that went out and vanilla refused: a "the click went out" return site combined with the
+     * last {@code useItemOn} answering {@code FAIL}, {@code CONSUME} or {@code null}.
      */
     public static int clickRefused;
 
@@ -79,17 +75,14 @@ public final class Diagnostics
     public static int passed;
 
     /**
-     * Times Litematica's on-screen "action blocked" warning was armed.
+     * Times Litematica's on-screen "action blocked" warning was armed, i.e. how often
+     * {@code EasyPlaceUtils#handlePlacementRestriction()} answered {@code true}.
      *
-     * <p>Replaces the {@code restrictionTrue} counter of 1.0–1.3.0, which claimed to count times
-     * {@code EasyPlaceUtils#placementRestrictionInEffect()} answered {@code true}. It never did: the
-     * hooks that fed it were {@code @Redirect}s on a static target, Mixin rejected all three handler
-     * descriptors, and a rejected descriptor aborts the whole mixin class — so the counter read 0
-     * for an entire tester session while {@code blocked} read 180. A counter that can only ever be
-     * zero is worse than no counter, so it is gone rather than fixed; see the class comment in
-     * {@code MixinEasyPlaceUtilsDebug} for why observing it per return site is also not worth seven
-     * hooks. What {@code blocked} plus {@code lastReturnSite} already say covers the same ground:
-     * areturn ordinals 0 and 1 <i>are</i> the placement-restriction vetoes.</p>
+     * <p>Observed at that method's single {@code ireturn} rather than at the seven call sites of
+     * {@code placementRestrictionInEffect()}: one hook instead of seven, and it watches the one place
+     * where Litematica actually acts on the boolean. Note that {@code blocked} plus
+     * {@link #lastReturnSite} already cover the same ground from the other side — areturn ordinals 0
+     * and 1 <i>are</i> the placement-restriction vetoes.</p>
      */
     public static int restrictionWarningArmed;
 
@@ -116,11 +109,7 @@ public final class Diagnostics
 
     /**
      * Whether Litematica's on-screen "action blocked" warning was armed for the click in progress.
-     *
-     * <p>Replaces the old {@code placement restrict.} field, which printed the return value of
-     * {@code placementRestrictionInEffect()}. That value was never observed — the hooks were
-     * rejected by Mixin — so the field could only ever print its "not reached" default, on every
-     * click, including ones vetoed by exactly that check. See {@link #restrictionWarningArmed}.</p>
+     * Fed by {@link #onPlacementRestrictionWarning}.
      */
     private static String lastRestrictionInfo = "<restriction check not reached>";
 
@@ -149,14 +138,9 @@ public final class Diagnostics
     private static long lastDirectLogMs;
 
     /**
-     * Whether a {@code [BLOCKED]} snapshot has already been dumped for the click in progress.
-     *
-     * <p>1.2.0 wrote up to three of them for a single rejected click — one from the branch hook, one
-     * from {@code handleEasyPlaceWithMessage} and one from the result hook — because
-     * {@code unthrottledSnapshots} bypassed the throttle for the first few events while one click
-     * produces several. Three near-identical copies of the same verdict inside fourteen milliseconds is
-     * a log nobody can read, and it is what made a normal post-placement rejection look like three
-     * separate bugs.</p>
+     * Whether a {@code [BLOCKED]} snapshot has already been dumped for the click in progress. Guards
+     * against the three call sites that could each fire for one rejection, which would otherwise print
+     * three near-identical copies of the same verdict.
      */
     private static boolean snapshotTaken;
 
@@ -166,14 +150,11 @@ public final class Diagnostics
      *
      * <p>This is what distinguishes "Litematica's own code rejected the click" from "some other mod
      * replaced the method". {@code WorldUtils#handleEasyPlace} reads {@code doEasyPlaceAction}'s
-     * answer and, on {@code FAIL}, prints the Easy Place failure message and returns
-     * {@code true} — it cannot tell where that answer came from. So if the message appears while this
-     * flag is still {@code false}, the {@code FAIL} did not come from any of the eleven returns we
-     * observe, and the only ways to get there are a mod that cancels the method
-     * ({@code EasyPlaceFix} injects at the {@code getHitType()} call, offset 79, and cancels there)
-     * or a Litematica version whose method shape changed. Without this flag the snapshot would just
-     * say {@code <no return site recorded yet>} and the tester would have no way to tell those two
-     * apart from each other.</p>
+     * answer and, on {@code FAIL}, prints the Easy Place failure message and returns {@code true} —
+     * it cannot tell where that answer came from. So if the message appears while this flag is still
+     * {@code false}, the {@code FAIL} did not come from any of the eleven returns we observe, which
+     * means a mod cancelled the method ({@code EasyPlaceFix} injects at the {@code getHitType()}
+     * call, offset 79) or Litematica's method shape changed.</p>
      */
     private static boolean legacyReturnSeen;
 
@@ -191,8 +172,8 @@ public final class Diagnostics
      * never out of range and a shifted ordinal produces a wrong-but-readable answer instead of
      * nothing at all.</p>
      *
-     * <p><b>Ordinals 7 and 8 mean the opposite of what they look like</b>, and 1.0–1.3.0 read them
-     * the obvious wrong way. The bytecode at the end of the method is:</p>
+     * <p><b>Ordinals 7 and 8 mean the opposite of what they look like.</b> The bytecode at the end
+     * of the method is:</p>
      *
      * <pre>
      *     754: invokevirtual MultiPlayerGameMode.useItemOn:(...)Lnet/minecraft/world/InteractionResult;
@@ -219,9 +200,8 @@ public final class Diagnostics
      *       directly off {@code useItemOn} itself — see {@link #onUseItemOnResult}.</li>
      * </ul>
      *
-     * <p>Ordinals re-derived from Litematica 0.28.8 bytecode. The one that matters in practice is
-     * <b>5</b>: {@code clickPos == null || hand == null}, which is where a light block in mid-air
-     * used to die.</p>
+     * <p>Offsets from Litematica 0.28.8 bytecode. The one that matters in practice is <b>5</b>:
+     * {@code clickPos == null || hand == null}, which is where a light block in mid-air dies.</p>
      */
     static final String[] RETURN_SITES = {
         /* 0 */ "ordinal 0 / offset 79  - FAIL: no schematic target on the ray AND the placement"
@@ -255,21 +235,13 @@ public final class Diagnostics
      * bytecode order. Indexed by the {@code ordinal} of the matching
      * {@code @At(value = "RETURN", ordinal = n)} hook in {@code MixinWorldUtilsDebug}.
      *
-     * <p><b>1.3.1 refused to observe this method at all</b>, reasoning that the legacy path needs no
-     * click fix and that eleven pins are maintenance for no gain. A tester log disproved that:
-     * {@code blocked} stayed 0 while the log held 31 rejections, and every snapshot said
-     * {@code areturn site : <legacy path: no per-branch hooks exist>} next to a screen full of
-     * {@code easy_place_fail}. That is worse than silence - it reads as "nothing was rejected". The
-     * reasoning also failed on its own terms: a path whose rejection the log cannot name is not
-     * diagnosed, whether or not it needs a click fix.</p>
+     * <p>Every offset is from Litematica 0.28.8 {@code WorldUtils#doEasyPlaceAction}. Seven of the
+     * eleven can return {@link InteractionResult#FAIL}; the rest are listed anyway so an ordinal is
+     * never out of range.</p>
      *
-     * <p>Every offset is from Litematica 0.28.8 {@code WorldUtils#doEasyPlaceAction}, re-derived
-     * from the bytecode rather than carried over: 1.3.1's aggregate message mislabelled offset 195
-     * as "already placed by this button hold" when it is "the cell already holds exactly the right
-     * block", and put the position-cache check on the wrong offset.</p>
-     *
-     * <p>Seven of the eleven can return {@link InteractionResult#FAIL}. The rest are listed anyway so
-     * an ordinal is never out of range.</p>
+     * <p>Pinning all eleven is what makes a legacy-path rejection name the site that produced it.
+     * Without them the snapshot can only say "doEasyPlaceAction answered FAIL", which is the same
+     * string for a benign already-filled cell and for a genuine failure.</p>
      */
     static final String[] LEGACY_RETURN_SITES = {
         /* 0 */ "ordinal 0 / offset 69  - FAIL: the schematic trace found nothing AND"
@@ -421,11 +393,11 @@ public final class Diagnostics
     /**
      * The legacy path was reached, per click.
      *
-     * <p>1.3.0 had no equivalent, so the two paths shared one set of per-click fields and switching
-     * the Litematica option mid-session produced a snapshot whose {@code areturn site} described
-     * {@code EasyPlaceUtils#handleEasyPlace} while a completely different method was running. The
-     * tester hit exactly that: the startup banner said {@code easyPlacePostRewrite = OFF} and
-     * {@code [CLICK] post-rewrite} lines printed a minute later.</p>
+     * <p>Resets the per-click state exactly as {@link #onEasyPlaceAttempt()} does for the rewritten
+     * path, so the two paths never share fields. Without that, switching the Litematica option
+     * mid-session produces a snapshot whose {@code areturn site} describes
+     * {@code EasyPlaceUtils#handleEasyPlace} while {@code doEasyPlaceAction} is the method actually
+     * running.</p>
      */
     public static void onLegacyAttempt(Minecraft mc)
     {
@@ -438,13 +410,8 @@ public final class Diagnostics
 
         resetPerClick();
 
-        // 1.3.1 wrote "<legacy path: no per-branch hooks exist for doEasyPlaceAction>" here, on the
-        // reasoning that the legacy path already clicks the target cell so it needs no click fix. A
-        // tester log showed what that costs: doEasyPlaceAction then runs for eighty seconds
-        // rejecting the click over and over while every snapshot prints that same sentence, which
-        // asserts that nothing was rejected next to a screen full of easy_place_fail. All eleven
-        // areturn sites are pinned now, so the field starts empty and is filled by the site that
-        // really ran.
+        // All eleven areturn sites are pinned, so this field starts empty and is filled by whichever
+        // site actually ran.
         lastReturnSite = "<no return site recorded yet>";
         lastTargetInfo = "<legacy path resolves its own target>";
         lastClickPosInfo = "<legacy path clicks the target cell itself, see offset 530>";
@@ -538,14 +505,12 @@ public final class Diagnostics
 
     /**
      * Notes for the three {@code ireturn} sites of {@code handleEasyPlaceWithMessage}, each stated by
-     * name instead of collapsed into a boolean.
+     * name rather than collapsed into a boolean.
      *
-     * <p>1.2.1 and earlier reported one sentence for "returned true" and another for "returned
-     * false", which made two genuinely different outcomes look like one. The method returns
-     * {@code true} both when it is about to print {@code litematica.message.easy_place_fail} and
-     * when the click merely consumed the action, and {@code false} both for "consumed, nothing
-     * printed" and for "not handled at all" — which is what the caller's own return value
-     * distinguishes.</p>
+     * <p>The method returns {@code true} both when it is about to print
+     * {@code litematica.message.easy_place_fail} and when the click merely consumed the action, and
+     * {@code false} both for "consumed, nothing printed" and for "not handled at all" — only the
+     * caller's own return value distinguishes those.</p>
      */
     public static final String LEGACY_MESSAGE_SHOWN =
             "the fail message is being printed right now (litematica.message.easy_place_fail)";
@@ -576,12 +541,10 @@ public final class Diagnostics
     /**
      * Counts {@code FAIL} verdicts that no {@code areturn} hook could attribute to a site.
      *
-     * <p>Always zero from 1.2.1 on, and that is the point. 1.2.0 flagged the situation with a loud
-     * {@code *** FAIL matched NO areturn hook - handleEasyPlace was overwritten by another mod ***}
-     * banner, which sent the user off to disable a mod that was not installed: the real cause was
-     * this mod's own bare {@code @At("RETURN")} hook, which landed on the same {@code areturn} as
-     * the ordinal-0 branch hook instead of the last one. All nine sites are now pinned by an
-     * explicit ordinal, so the counter is a tripwire rather than a routine report.</p>
+     * <p>Expected to stay 0: all nine {@code handleEasyPlace} sites and all eleven
+     * {@code doEasyPlaceAction} sites are pinned by an explicit ordinal, so an unattributed {@code FAIL}
+     * means one of those methods was rewritten by another mod. Treated as a tripwire rather than a
+     * routine report, which is why it is only counted and only surfaced in the counter line.</p>
      */
     public static int unattributedFails;
     public static void onEasyPlaceUnattributedFail()
@@ -613,13 +576,8 @@ public final class Diagnostics
 
     /**
      * Records Litematica's on-screen placement-restriction verdict, read from the one
-     * {@code ireturn} of {@code EasyPlaceUtils#handlePlacementRestriction()}.
-     *
-     * <p>Not the same thing as the old {@code restrictionTrue} counter, and deliberately so. That
-     * counter claimed to watch {@code placementRestrictionInEffect()} at its seven return sites; the
-     * hooks were {@code @Redirect}s on a static target, Mixin rejected their descriptors, and the
-     * counter therefore read 0 forever. This watches a single {@code ireturn} of a method whose whole
-     * job is to act on that boolean, which is both cheaper and actually correct.</p>
+     * {@code ireturn} of {@code EasyPlaceUtils#handlePlacementRestriction()} — the only place
+     * Litematica acts on that boolean.
      */
     public static void onPlacementRestrictionWarning(boolean armed)
     {
@@ -725,23 +683,18 @@ public final class Diagnostics
         lastPath = path;
         lastReturnSite = RETURN_SITES[ordinal];
 
-        // 1.3.1 bug, caught by a tester log: this reset used to sit here, i.e. it wiped
-        // lastClickPlaced one line before the verdict below read it. Every placement therefore
-        // counted as refused and placed stayed 0 - the exact symptom 1.3.1 was written to cure,
-        // re-introduced by the fix itself. The reset belongs at click START (onEasyPlaceAttempt /
-        // onLegacyAttempt), not at click end.
-
+        // lastClickPlaced is reset at click START (onEasyPlaceAttempt / onLegacyAttempt), not here:
+        // useItemOn already answered by now, and clearing it here would wipe the verdict read below.
         String name = result == null ? "<null>" : String.valueOf(result);
 
         if (result == InteractionResult.FAIL)
         {
-            // Defensive only. Should be unreachable now that every completing site is pinned
-            // explicitly; counted rather than guessed at, so the summary can prove it.
+            // Defensive only. Every completing site is pinned explicitly, so this branch should be
+            // unreachable; counted rather than guessed at, so the summary can prove it.
             blocked++;
 
-            // Every one of the nine sites is pinned by an explicit ordinal, so an unrecorded one can
-            // only mean handleEasyPlace itself was rewritten. Both paths are now fully pinned, which
-            // is why this check no longer has to exclude the legacy one as 1.3.1 had to.
+            // All nine sites are pinned by an explicit ordinal, so an unrecorded one can only mean
+            // handleEasyPlace itself was rewritten.
             if (lastReturnSite.startsWith("<"))
             {
                 onEasyPlaceUnattributedFail();
@@ -790,20 +743,14 @@ public final class Diagnostics
      * Records the outcome of one {@code WorldUtils#doEasyPlaceAction} call, from whichever of its
      * eleven {@code areturn} sites left it.
      *
-     * <p><b>This method is the reason 1.3.2 exists.</b> 1.3.1 deleted the hooks that fed it, deciding
-     * that the legacy path "needs no click fix" so its internals were not worth observing. That left
-     * the whole legacy path mute in the one place that matters: a tester run showed
-     * {@code finished=0 placed=0 refused=0 blocked=0 passed=0} next to thirty-one rejection
-     * snapshots, and {@code areturn site : <legacy path: no per-branch hooks exist>}. Four counters
-     * reading zero while the method was visibly working is the exact failure mode this mod was
-     * written to eliminate, reached by removing instrumentation rather than by a bug in Litematica.
-     * Counting the legacy path is not a feature; it is the minimum for the numbers to be true.</p>
+     * <p>Called from all eleven pinned sites, so the legacy path's counters move and its rejections
+     * name a site. A path whose rejection the log cannot explain is not diagnosed, whether or not it
+     * needs a click fix.</p>
      *
-     * <p>The verdict is still {@link #lastClickPlaced} — this method's own
-     * {@link InteractionResult} does not say whether a block came down, because offset 703 answers
-     * {@code SUCCESS} both after a click that did nothing and when the build item was empty. The
-     * {@code useItemOn} hooks are path-agnostic (they sit on {@code MultiPlayerGameMode}), so their
-     * answer is available here too.</p>
+     * <p>The verdict is {@link #lastClickPlaced}, not this method's own {@link InteractionResult}:
+     * offset 703 answers {@code SUCCESS} both after a click that did nothing and when the build item
+     * was empty. The {@code useItemOn} hooks sit on {@code MultiPlayerGameMode} and so are
+     * path-agnostic — their answer is available on this path too.</p>
      *
      * @param ordinal the {@code areturn} ordinal, passed straight through from the mixin so it
      *                indexes {@link #LEGACY_RETURN_SITES} directly
@@ -831,10 +778,8 @@ public final class Diagnostics
             blocked++;
             lastFailBranch = lastReturnSite;
 
-            // Only ordinal 9 can FAIL while also being a legitimate "not a schematic click" exit,
-            // and its message says so. Writing the snapshot here rather than at
-            // handleEasyPlace's return keeps the branch, the counter and the snapshot on the same
-            // observation: in 1.3.1 they came from three places and could disagree.
+            // Writing the snapshot here rather than at handleEasyPlace's return keeps the branch,
+            // the counter and the snapshot on one observation, so they cannot disagree.
             onBlocked(null, Minecraft.getInstance());
 
             return;
@@ -933,9 +878,8 @@ public final class Diagnostics
     /**
      * Dumps everything known about a rejected click. Throttled, except for the first few.
      *
-     * <p>At most one snapshot per click: {@link #onEasyPlaceFailed()} already dedupes via
-     * {@link #snapshotTaken}, which is reset at {@code handleEasyPlace} entry. 1.2.0 had no such
-     * guard and printed three overlapping snapshots for one rejection.</p>
+     * <p>At most one snapshot per click: {@link #onEasyPlaceFailed()} dedupes via
+     * {@link #snapshotTaken}, which is reset at {@code handleEasyPlace} entry.</p>
      *
      * @param reason what rejected the click, or {@code null} when the caller has already put the
      *               verdict into {@link #lastFailBranch}
@@ -998,10 +942,9 @@ public final class Diagnostics
         log("BLOCKED", "player sees message : " + lastWithMessage);
         log("BLOCKED", "vanilla crosshair   : " + lastVanillaHitInfo);
 
-        // Printed only when it can say something the other lines cannot. A FAIL message with no
+        // Printed only when it can say something the other lines cannot: a FAIL message with no
         // observed doEasyPlaceAction return behind it means the method was replaced, not that it
-        // vetoed - which is the single most useful thing this snapshot can report about
-        // EasyPlaceFix, and 1.3.1 had no way to express it.
+        // vetoed.
         if (!legacyReturnSeen && lastPath.startsWith("legacy"))
         {
             log("BLOCKED", "who said FAIL       : NOT doEasyPlaceAction - none of its 11 return sites"
@@ -1076,7 +1019,7 @@ public final class Diagnostics
         log("INIT", "[ARMED] lines        : Litematica's own gate (easyPlaceMode on, not the REBUILD"
                 + " tool mode, activation key held). They are informational - if placement works,"
                 + " ignore them.");
-        log("INIT", "easyPlaceClickAdjacent: not consulted by this mod since 1.3.0. Both settings"
+        log("INIT", "easyPlaceClickAdjacent: not consulted by this mod. Both settings"
                 + " of that Litematica option produce a light block click.");
         log("INIT", "which path is live  : " + describePath() + ".");
         log("INIT", "easyplacefix         : " + describeEasyPlaceFix() + ".");

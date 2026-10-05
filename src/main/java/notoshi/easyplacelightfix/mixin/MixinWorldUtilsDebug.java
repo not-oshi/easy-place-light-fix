@@ -14,17 +14,18 @@ import notoshi.easyplacelightfix.Diagnostics;
  * Read-only diagnostics for Litematica's legacy Easy Place path
  * ({@code easyPlacePostRewrite = false}).
  *
- * <p>This is the path <b>EasyPlaceFix replaces</b>, so it is also the path where our own mod used to
- * be completely inert. From Litematica 0.28.8 {@code WorldUtils#handleEasyPlace}:</p>
+ * <p>This is the path <b>EasyPlaceFix replaces</b>, so it is also the path where this mod's hooks
+ * are inert. Litematica 0.28.8 {@code WorldUtils#handleEasyPlace} selects between the two
+ * implementations by that same option:</p>
  *
  * <pre>
  *      9: EASY_PLACE_POST_REWRITE.getBooleanValue()
- *     15: ifne 104        // ON -&gt; return false, doEasyPlaceAction is never called
+ *     15: ifne 104        // ON -> EasyPlaceUtils#handleEasyPlace; doEasyPlaceAction is never called
  *     27: invokestatic doEasyPlaceAction(mc)
  * </pre>
  *
  * <p>EasyPlaceFix's only entry point is an injection into {@code doEasyPlaceAction}, so
- * {@code easyPlacePostRewrite = true} makes it inert and {@code = false} makes this mod's
+ * {@code easyPlacePostRewrite = true} makes that mod inert and {@code = false} makes this mod's
  * Litematica-side hooks inert. The two settings are mutually exclusive by construction — see the
  * README, which explains what to set instead.</p>
  *
@@ -41,8 +42,9 @@ public class MixinWorldUtilsDebug
      * Descriptor of the legacy action. Observed only at its {@code HEAD}, never at a return site.
      *
      * <p>It has <b>eleven</b> {@code areturn} sites in 0.28.8 (offsets 69, 77, 155, 165, 195, 217,
-     * 247, 432, 703, 730, 734). 1.3.0 redirected the single call site instead — there is only one, at
-     * {@code handleEasyPlace} offset 27 — and the handler was rejected:</p>
+     * 247, 432, 703, 730, 734). Its one call site, at {@code handleEasyPlace} offset 27, is not
+     * worth redirecting: a redirect handler on a static target cannot take the original return
+     * value as a parameter, so the descriptor is rejected with</p>
      *
      * <pre>
      *     Found unexpected argument type net.minecraft.world.InteractionResult at index 1,
@@ -51,9 +53,9 @@ public class MixinWorldUtilsDebug
      *                            Lnet/minecraft/client/Minecraft;)Lnet/minecraft/world/InteractionResult;
      * </pre>
      *
-     * <p>That aborted this whole mixin class, so a tester session recorded no legacy-path diagnostics
-     * at all. {@link #notoshi$legacyEntered} marks the attempt and the eleven
-     * {@code notoshi$legacyRetN} hooks read the verdict;
+     * <p>and a rejected handler descriptor aborts the application of the <b>whole</b> mixin class,
+     * silencing every other injection in it. {@link #notoshi$legacyEntered} marks the attempt and
+     * the eleven {@code notoshi$legacyRetN} hooks read the verdict;
      * {@link #notoshi$debugLegacyMessageShown} remains only to catch the case where the
      * {@code FAIL} was produced by something other than a return we can see.</p>
      */
@@ -65,11 +67,8 @@ public class MixinWorldUtilsDebug
      *
      * <p>Resets the per-click state, exactly as {@code notoshi$attemptStart} does for the rewritten
      * path, so a snapshot can never mix in values left behind by an earlier post-rewrite click.
-     * Without this the two paths share one set of fields, and switching the Litematica option
-     * mid-session produced snapshots whose {@code areturn site} described a method that was not
-     * running — which is exactly what the tester hit, in the opposite direction: the startup banner
-     * said {@code easyPlacePostRewrite = OFF} while {@code [CLICK] post-rewrite} lines were printing
-     * seconds later.</p>
+     * Without this the two paths share one set of fields and a snapshot's
+     * {@code areturn site} can describe a method that is not running.</p>
      */
     @Inject(method = LEGACY_ACTION, at = @At("HEAD"))
     private static void notoshi$legacyEntered(Minecraft mc,
@@ -81,18 +80,14 @@ public class MixinWorldUtilsDebug
     /**
      * The eleven {@code areturn} sites of {@code doEasyPlaceAction}, each pinned by ordinal.
      *
-     * <p><b>1.3.1 observed none of them</b> and the tester log showed exactly what that costs:
-     * {@code finished=0 blocked=0} while the method rejected clicks for eighty seconds and every
-     * snapshot said {@code areturn site : <legacy path: no per-branch hooks exist>}. The argument
-     * for skipping them was that the legacy path needs no click fix, which is true and irrelevant —
-     * a path whose rejection the log cannot name is not diagnosed, and four counters reading zero
-     * next to a screen full of {@code easy_place_fail} is the exact false report this mod exists to
-     * prevent.</p>
+     * <p>All eleven are hooked even though the legacy path needs no click fix: a rejection the log
+     * cannot name is undiagnosed, and four counters reading zero next to a screen full of
+     * {@code easy_place_fail} is a false report.</p>
      *
      * <p>These are plain {@code @Inject}s, not {@code @Redirect}s, for the same reason as in
      * {@code MixinEasyPlaceUtilsDebug}: a redirect handler on a static target cannot take the
-     * original return value as a parameter and cannot call the target without recursing, so every
-     * attempt was rejected and took the whole class down. Nothing here modifies control flow.</p>
+     * original return value as a parameter and cannot call the target without recursing, so the
+     * descriptor is rejected and takes the whole class down. Nothing here modifies control flow.</p>
      *
      * <p>Ordinals index {@code Diagnostics.LEGACY_RETURN_SITES} directly, so the number in the
      * mixin <em>is</em> the bytecode offset's ordinal and the two cannot drift.</p>
@@ -169,10 +164,8 @@ public class MixinWorldUtilsDebug
      * it prints {@code litematica.message.easy_place_fail}. Three {@code ireturn} sites in 0.28.8
      * (offsets 90, 103, 105), all pinned.
      *
-     * <p>1.3.1 also owned the snapshot from here, because {@code doEasyPlaceAction} had no return
-     * hooks. It now only records <i>that</i> a failure was reported and whether one of
-     * {@code doEasyPlaceAction}'s own returns produced it; the branch, the counter and the snapshot
-     * all come from {@link Diagnostics#onLegacyResult}, so they cannot disagree.</p>
+     * <p>This hook records only <i>that</i> a failure was reported; the branch, the counter and the
+     * snapshot all come from {@link Diagnostics#onLegacyResult}, so they cannot disagree.</p>
      */
     @Inject(
             method = "handleEasyPlace(Lnet/minecraft/client/Minecraft;)Z",
@@ -187,10 +180,8 @@ public class MixinWorldUtilsDebug
 
         if (failed)
         {
-            // If no doEasyPlaceAction return site was seen, the FAIL came from somewhere else:
-            // EasyPlaceFix cancels the method at its getHitType() call (offset 79). 1.3.1 could not
-            // tell those two cases apart and so could not answer "why is easyplacefix behaving
-            // strangely" - both looked like "doEasyPlaceAction said FAIL".
+            // With no doEasyPlaceAction return site seen, the FAIL came from elsewhere: Litematica's
+            // own veto, or EasyPlaceFix cancelling the method at its getHitType() call (offset 79).
             Diagnostics.onLegacyAnsweredElsewhere();
         }
     }
@@ -232,15 +223,14 @@ public class MixinWorldUtilsDebug
      *     but found (Lnet/minecraft/client/Minecraft;)V
      * </pre>
      *
-     * <p>That exception aborts the application of the <b>whole</b> mixin class, which silently
-     * disabled the other injections in this class as well. It is only a warning because this mixin
-     * config is {@code required: false}.</p>
+     * <p>That exception aborts the application of the <b>whole</b> mixin class, disabling the other
+     * injections in it. It is only a warning because this mixin config is
+     * {@code required: false}.</p>
      *
      * <p>The {@code ordinal = 0} is redundant — {@code easyPlaceOnUseTick} is {@code void} with a
      * single {@code return} at offset 62, so a bare {@code @At("RETURN")} has only one instruction
      * to mean. It is pinned anyway, because the rule in {@code MixinEasyPlaceUtilsDebug} is that
-     * every {@code @At} in this mod names its ordinal, and one exception is how the 1.2.0 ordinal bug
-     * looked the moment before it was a bug.</p>
+     * every {@code @At} in this mod names its ordinal.</p>
      *
      * <p>Worth knowing what this method actually gates, from its bytecode: it calls
      * {@code doEasyPlaceAction} only when {@code EASY_PLACE_MODE} <b>and</b>
@@ -260,15 +250,11 @@ public class MixinWorldUtilsDebug
 
     /**
      * The legacy {@code placementRestrictionInEffect(Minecraft)} overload is deliberately not observed
-     * per return site.
-     *
-     * <p>1.2.1 injected at a bare {@code @At("RETURN")} — one of eight {@code ireturn} sites,
-     * whichever the default picked. 1.3.0 redirected its two call sites instead and that handler was
-     * rejected too (same static-redirect rule as in {@code MixinEasyPlaceUtilsDebug}), taking the
-     * class down again. Neither is needed: both call sites in {@code doEasyPlaceAction} (offsets 60
-     * and 715) are immediately followed by a return that {@link #notoshi$legacyRet0} and
-     * {@link #notoshi$legacyRet9} already report, and the method's only other job here is refreshing
-     * the vanilla crosshair readout, which {@link #notoshi$legacyEntered} does.</p>
+     * per return site. Its eight {@code ireturn} sites are neither pinned nor redirected: both call
+     * sites in {@code doEasyPlaceAction} (offsets 60 and 715) are immediately followed by a return
+     * that {@link #notoshi$legacyRet0} and {@link #notoshi$legacyRet9} already report, and the
+     * method's only other job here is refreshing the vanilla crosshair readout, which
+     * {@link #notoshi$legacyEntered} does.
      *
      * <p>Note what is <b>not</b> in {@code LEGACY_RETURN_SITES}: no "no solid neighbour to click".
      * That check only exists on the rewritten path, in {@code getAdjacentClickPosition}. The legacy

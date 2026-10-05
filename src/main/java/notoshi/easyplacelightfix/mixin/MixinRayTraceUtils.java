@@ -74,18 +74,15 @@ import notoshi.easyplacelightfix.Diagnostics;
  *
  * <h2>The rotation this file does not send</h2>
  *
- * <p>One earlier version of this comment claimed the whole mod was "no more visible to the server
- * than ordinary block placement", because the click was sent verbatim. That was wrong, and the claim
- * has been retracted rather than quietly dropped: {@link PrinterDelivery} also sends Litematica
- * Printer's {@code ServerboundMovePlayerPacket.Rot} for light targets, so the server does briefly see
- * a look direction the client never rendered. That is inherent to the technique, and
- * {@code rotateForLightBlocks} turns it off. The claim was only ever true of <i>this</i> redirect.</p>
+ * <p>{@link PrinterDelivery} sends Litematica Printer's
+ * {@code ServerboundMovePlayerPacket.Rot} for light targets, so the server does briefly see a look
+ * direction the client never rendered. That is inherent to the technique, and
+ * {@code rotateForLightBlocks} turns it off.</p>
  *
- * <p>This {@code @Redirect} is the one that stays: its target, {@code BlockState#getShape}, is an
- * instance method, so Mixin puts the receiver first in the handler signature and there is no
- * ambiguity about the return value — it <i>is</i> the handler's return type. That is the opposite of
- * the static case, which is what makes the redirects in 1.3.0's diagnostic mixins impossible; see
- * the class comment in {@code MixinEasyPlaceUtilsDebug}.</p>
+ * <p>This {@code @Redirect} targets {@code BlockState#getShape}, an instance method, so Mixin puts
+ * the receiver first in the handler signature and the return value is unambiguous — it <i>is</i>
+ * the handler's return type. A {@code @Redirect} on a static target is the opposite: the handler can
+ * neither observe the original return value nor call the target without recursing.</p>
  */
 @Mixin(targets = "fi.dy.masa.litematica.util.RayTraceUtils")
 public class MixinRayTraceUtils
