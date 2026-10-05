@@ -1,0 +1,26 @@
+{
+    "schemaVersion": 1,
+    "id": "${mod_id}",
+    "version": "${mod_version}",
+    "name": "Easy Place Light Fix",
+    "description": "Makes minecraft:light blocks placeable through Litematica's Easy Place. The root cause is not the click: on the rewritten path, Litematica has to click an existing block because vanilla cannot click air, and a light block in mid-air has no solid neighbour to click - so Easy Place gives up with FAIL before it ever places anything. This mod, for light blocks only, clicks the target cell itself and delivers it with Litematica Printer's server-side rotation. It hooks getClickPosition rather than getAdjacentClickPosition, so Litematica's 'easyPlaceClickAdjacent' option makes no difference, and the rotation is sent from the head of vanilla useItemOn, so it also fires when EasyPlaceFix issues the click instead of Litematica. Litematica still decides what goes where and never loses a target it found; every other block keeps stock behaviour, vanilla collision shapes are untouched, and nothing has to be installed on the server.",
+    "authors": [
+        "not_oshi"
+    ],
+    "contact": {},
+    "license": "MIT",
+    "environment": "client",
+    "entrypoints": {
+        "client": [
+            "notoshi.easyplacelightfix.EasyPlaceLightFixClient"
+        ]
+    },
+    "mixins": [
+        "easyplace_lightfix.mixins.json",
+        "easyplace_lightfix.debug.mixins.json"
+    ],
+    "depends": {
+        "minecraft": "~${minecraft_version}-",
+        "litematica": ">=0.28.8-"
+    }
+}

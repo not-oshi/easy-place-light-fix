@@ -1,0 +1,80 @@
+plugins {
+    id 'net.fabricmc.fabric-loom' version '1.17.+'
+}
+
+version = project.mod_version
+group = 'notoshi'
+
+base {
+    archivesName = "${project.mod_id}-${project.minecraft_version_out}"
+}
+
+// No `mappings` line is needed: since 26.x Minecraft ships already deobfuscated under the official
+// Mojang names, so Loom's default official-Mojang-mappings setup is used as-is.
+repositories {
+    mavenCentral()
+    maven {
+        name = 'Fabric'
+        url = 'https://maven.fabricmc.net/'
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    implementation "net.fabricmc:fabric-loader:${project.fabric_loader_version}"
+
+    // Litematica is deliberately NOT declared as a compile dependency: the mixin targets it by name
+    // via `@Mixin(targets = "...")`, so the project builds without any external jars.
+    //
+    // To run a dev client (the F5 run config), drop these into ./libs and uncomment the block below:
+    //   litematica-fabric-26.2-0.28.8.jar
+    //   malilib-fabric-26.2-0.29.6.jar
+    //
+    // loom {
+    //     runs {
+    //         client {
+    //             client()
+    //             ideConfigGenerated true
+    //             modLocalRuntime fileTree('libs') { include '**/*.jar' }
+    //         }
+    //     }
+    // }
+}
+
+processResources {
+    // Pin UTF-8 explicitly, otherwise the non-ASCII characters in fabric.mod.json can get mangled
+    // on Windows hosts whose system charset is not UTF-8.
+    filteringCharset = "UTF-8"
+
+    inputs.property "mod_id", project.mod_id
+    inputs.property "mod_version", project.mod_version
+    inputs.property "minecraft_version", project.minecraft_version
+
+    filesMatching("fabric.mod.json") {
+        expand "mod_id": project.mod_id,
+               "mod_version": project.mod_version,
+               "minecraft_version": project.minecraft_version
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.encoding = "UTF-8"
+    // Minecraft 26.x targets Java 25.
+    it.options.release = 25
+}
+
+tasks.withType(AbstractArchiveTask).configureEach {
+    preserveFileTimestamps = true
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
+    withSourcesJar()
+}
+
+jar {
+    from("LICENSE") {
+        rename { "${it}_${project.mod_id}" }
+    }
+}

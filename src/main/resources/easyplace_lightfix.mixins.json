@@ -1,0 +1,14 @@
+{
+    "required": true,
+    "minVersion": "0.8",
+    "package": "notoshi.easyplacelightfix.mixin",
+    "compatibilityLevel": "JAVA_25",
+    "client": [
+        "MixinEasyPlaceUtilsDelivery",
+        "MixinMultiPlayerGameModeDelivery",
+        "MixinRayTraceUtils"
+    ],
+    "injectors": {
+        "defaultRequire": 1
+    }
+}
